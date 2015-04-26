@@ -1,0 +1,65 @@
+---
+title: "ToothGrowth Dataset Analysis"
+author: "Gabe Rudy"
+date: "April 20, 2015"
+output: html_document
+---
+
+The response is the length of odontoblasts (teeth) in each of 10 guinea pigs at each of three dose levels of Vitamin C (0.5, 1, and 2 mg) with each of two delivery methods (orange juice or ascorbic acid).
+
+```{r, results='hold'}
+library(datasets)
+summary(ToothGrowth$len)
+```
+
+```{r, results='hold'}
+#Create a list by supplement type
+by_supp <- split(ToothGrowth$len, ToothGrowth$supp)
+summary(by_supp$OJ)
+summary(by_supp$VC)
+```
+
+```{r, results='hold'}
+#Create a list by dosage levels
+by_dose <- split(ToothGrowth$len, ToothGrowth$dose)
+summary(by_dose$`0.5`)
+summary(by_dose$`1`)
+summary(by_dose$`2`)
+```
+
+We can see by the summary information that that *OJ* has a greater mean than *VC* (absorbic acid) delivery. Also, the mean length increases with dosage.
+
+```{r, fig.width=8, fig.height=6, echo=FALSE}
+require(graphics)
+par(mfrow=c(1,2))
+plot(len ~ dose, main="OJ (Orange Juice)", data=subset(ToothGrowth, supp == "OJ"))
+plot(len ~ dose, main="VC (Ascorbic Acid)", data=subset(ToothGrowth, supp == "VC"))
+```
+
+Plot of the data from the two supplement types. Length appears to increase with dosage and absorbic acid VC) has a greater max and min values than OJ (which we also saw in the summary statistics).
+
+##Confidence Interval and Tests for Supplement Type
+
+Lets compare the observations in group OJ and VC. 
+
+We will use a Student's t-Test to compare the two groups with `0.95` confidence level.
+
+```{r}
+t.test(by_supp$OJ, by_supp$VC, paired=FALSE, var.equal = TRUE)
+```
+
+Our T test statistic is `1.9`, meaning we estimate our difference of means is `1.9` standard error from the hypothosized mean. The P-value is `0.06`, meaning there is `0.06` probability of obtaining differences of means greather than the observed if the truely where no difference based on supplement type.
+
+We are makeing the assumption that *the variance of the two groups is equal*. We are also making a two-sided test, saying the difference of the means could be either greater than or less than, not just strictly greater than or less than.
+
+##Confidence Interval and Tests for Dose
+
+Lets compare the observations in dosage group `0.5` and `2`.
+
+We will use a Student's t-Test to compare the two groups with a `0.95` confidence level.
+
+```{r}
+t.test(by_dose$`0.5`, by_dose$`2`, paired=FALSE, var.equal = TRUE)
+```
+
+Our T test statistic is `11.8`, meaning we estimate our difference of means is `11.8` standard error from the hypothosized mean. The P-value is `2.8e-14`, meaning there is `2.8e-14` probability of obtaining differences of means greather than the observed if the truely where no difference based on supplement type. We are makeing the assumption that *the variance of the two groups is equal*. We are also making a two-sided test, saying the difference of the means could be either greater than or less than, not just strictly greater than or less than.

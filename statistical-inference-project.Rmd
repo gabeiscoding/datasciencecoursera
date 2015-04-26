@@ -1,0 +1,80 @@
+---
+title: "Exponential Distribution Simulations"
+author: "Gabe Rudy"
+date: "April 19, 2015"
+output: html_document
+---
+
+In this project, we will investigate through simulations the properties of the mean of samples of the exponential distribution.
+
+The properties we are investigating are:
+
+1. Sample mean versus the theoretical distribution mean
+2. The sample variance versus the theoritcal distribution variance
+3. The distribution of these means versus the normal distribution
+
+The exponential distribution has a $\lambda$ parameter. We will also need to choose how many samples we will be taking from this distribution $n$. Finally the number of simulations will be $nosim$.
+
+For this exercise we will set:
+
+```{r}
+lambda <- 0.2
+n <- 40
+nosim <- 1000
+```
+
+##Sample Mean versus Theoretical Mean
+
+Lets investigate the sample mean first. We take $nosim$ draws of $n$ samples from the exponential distribution with `rexp` and take the mean of each.
+
+The population mean is $1/\lambda$ that we are comparing to.
+
+```{r}
+sim_means <- replicate(nosim, { mean(rexp(n, rate=lambda)) })
+population_mean <- 1/lambda
+
+c(mean(sim_means), population_mean)
+```
+
+The first number is mean of our `sim_means`, which is very close to the second number, the `population_mean`.
+
+
+```{r, fig.width=6, fig.height=5.5, echo=FALSE}
+hist(sim_means, main="Figure 1", breaks="Scott")
+abline(v = population_mean, col = "blue", lwd = 2)
+```
+
+In **Figure 1** we show its distribution with the population mean of `5` drawn in a blue line. Note how close it is to the normal distribution. More on that in Distribution.
+
+##Sample Variance versus Theoretical Variance
+
+Now for investigating the sample variance we can compute the variance of our simulated means. From the *Central Limit Therom* we know the variance of the sample mean will be $\sigma^2/n$. The standard deviation ($\sigma$) of the exponential distribution is $1/\lambda$.
+
+
+```{r}
+sample_var <- var(sim_means)
+population_var <- ((1/lambda)^2)/n
+population_sd <- sqrt(population_var)
+    
+c(sample_var, population_var)
+```
+
+Again we note the simulation value `sample_var` is very close to `expected_var`.
+
+##Distribution
+
+Let's compare our sample `sim_means` to $nosim$ random normals with the `mean` and `sd` parameters set to the values we have shown we expect of `population_mean` and `population_sd`.
+
+```{r}
+sim_normals <- rnorm(nosim, mean=population_mean, sd=population_sd)
+```
+
+Now let's compare the histogram of `sim_means` to our `sim_normals`.
+
+```{r, fig.width=8, fig.height=6, echo=FALSE}
+par(mfrow=c(1,2)) 
+hist(sim_means, main="Figure 2", breaks=seq(1,9,0.25))
+hist(sim_normals, main="Figure 3", breaks=seq(1,9,0.25))
+```
+
+As expected by the *Central Limit Therom*, the means of our random exponential random variable in **Figure 2** are dstributed normally. **Figure 3** shows for comparison the same number of random variables taken from the normal distribution with the therom provided parameters.
