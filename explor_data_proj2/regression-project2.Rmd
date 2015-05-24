@@ -1,0 +1,106 @@
+---
+title: 'Analysis of MPG for 1974 Automobiles'
+author: "Gabe Rudy"
+date: "May 24, 2015"
+fontsize: 10pt
+output: html_document
+---
+
+This report explores the relationship between the mile per gallon (MPG) of select vehicles and the type of transmission.
+
+The data was extracted from the 1974 Motor Trend US magazine, and comprises fuel consumption and 10 aspects of automobile design and performance for 32 automobiles (1973–74 models).
+
+### Executive Summary
+
+Although there looks like a weak correlation between transmission type and MPG and a slight increase in MPG for Manual transmissions, when correcting for confounding variables, the relationship is not statistically significant.
+
+### Model Selection
+
+While we are interested in the ability of transmission type to impact (predict) MPG, clearly many other variables such as weight and engine types are going to directly affect MPG and must be considered as confounding variables in our analysis.
+
+A pair-wise comparison of all collected variables is provided in *Fig1* to investigate variables highly correlated to MPG. In particular, the three strongest correlations are weight (-0.868), number of cylinders (-0.852) and engine displacement (-0.848). These variables are highly correlated with themselves (0.782 and higher), and so we will choose weight to represent all of them in our models.
+
+Variables we will drop from analysis include qsec (1/4 mile time), # of gears and # of carburetors due to their poor correlation (< 0.6) to MPG.
+
+The following variables other than MPG and Transmission are then considered, with their correlation to MPG and Transmission type in parenthesis.
+
+ * *Weight* Weight in pounds (-0.868, -0.692)
+ * *HP* Horse Power (-0.776, -0.243)
+ * *Drat* Real Axle Ratio (0.681, 0.713)
+ * *VS* "V" or Strait Pistons (0.664, 0.168)
+
+First we prepare our data set with these variables given proper labels and factor levels:
+
+```{r, message=FALSE, warning=FALSE}
+require(datasets); data(mtcars)
+
+cars <- mtcars[,c("mpg", "am", "wt", "hp", "drat", "vs")]
+colnames(cars) <- c("MPG", "Transmission", "Weight", "HP", "Drat", "VS")
+cars$Transmission <- factor(cars$Transmission); levels(cars$Transmission) <- list("Automatic"="0", "Manual"="1")
+cars$VS <- factor(cars$VS); levels(cars$VS) <- list("V"="0", "Strait"="1")
+
+#Variable summary
+summary(cars)
+
+#Table of Total MPG by Transmission type
+xtabs(MPG ~ Transmission, data=cars)
+```
+
+Lets start the analysis with the marginal estimate (disregarding all covariates).
+
+```{r}
+summary(lm(MPG ~ Transmission , data = cars))$coeff
+```
+
+In this case, the coefficient provide an estimate MPG improvement of 7.25 for Manual vs Automatic with a t-test that **is** significant. But, this is clearly not the correct model, as we have not accounted for these logically linked variables of weight and engine parameters.
+
+Now lets consider using all of the described variables as predictors
+
+```{r}
+summary(lm(MPG ~ . , data = cars))$coeff
+```
+
+The coefficient estimate of Transmission being Manual is now `2.085`, meaning we expect a 2 mpg increase for manual transmission holding remaining variables constant. The t-test for $H_0: \beta_{TransType} = 0$ versus $H_a: \beta_{TransType} \neq 0$ is **not** significant with a p-value of 0.21.
+
+Finally, lets look at the model with just `Weight` as a covariate with `Transmission`.
+
+```{r}
+summary(lm(MPG ~ Transmission + Weight , data = cars))$coeff
+```
+
+Note now the sign of the effect has changed. With a .02 reduction in MPG with a Manual transmission over a Automatic that does **not** have a significant p-value of the t-test.
+
+In *Fig2*, the residuals of models containing only the 4 covariates as well as just `Weight` are computed and plotted against the transmission type, allowing us to quantify and visualize Transmission type by "corrected" MPG. In the case of `Weight` only, there is very little notable difference. With all 4 covariates, the 2MPG coefficient estimate is visible, but the means are not well separated leading to the weak statistical inference test result.
+
+The *quantified* mean difference between the 4-covariate adjusted MPG and transmission type is:
+```{r}
+adjmpgs <- split(resid(lm(MPG ~ Weight+HP+Drat+VS, data=cars)), cars$Transmission)
+sapply(adjmpgs, mean)
+```
+
+Meaning a Manual provides a 0.4 increase in MPG, and an Automatic a 0.28 decrease, with these variables considered.
+
+Looking at the residual plots in *Fig3* for our full model, there is no signs of Heteroskedasticity or non-normality in the data, providing certainty in making sound conclusions based on our model.
+
+In conclusion, we can not make a statement about whether a Manual transmission improves MPG in a statistically sound manner.
+
+## Appendix
+```{r, fig.height=6, fig.width=10, echo = FALSE, message=FALSE, warning=FALSE}
+require(GGally); require(ggplot2); library(gridExtra)
+g = ggpairs(mtcars, lower = list(continuous = "smooth"),params = c(method = "loess"), title="Fig1: Pair Wise Comparison of Variables")
+g
+```
+
+```{r, fig.height=6, fig.width=10, echo = FALSE}
+library(gridExtra)
+grid.arrange(
+    qplot(Transmission, resid(lm(MPG ~ Weight , data = cars)), data=cars, main="Weight Only"),
+    qplot(Transmission, resid(lm(MPG ~ Weight + HP + Drat + VS)), data = cars, main="All Covariates"),
+    main="Fig2: Correcting For Covariants by Transmission Type", ncol=2)
+```
+
+### Figure 3: Residual Plots of Full Model
+```{r, fig.height=6, fig.width=10, echo = FALSE}
+par(mfrow = c(2, 2))
+plot(lm(MPG ~ ., data = cars))
+```
