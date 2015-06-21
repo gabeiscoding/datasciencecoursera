@@ -1,0 +1,135 @@
+---
+title: "NOAA Storm Data Analysis"
+author: "Gabe Rudy"
+date: "June 20, 2015"
+output: html_document
+---
+
+This analysis explores the U.S. National Oceanic and Atmospheric Administration's (NOAA) storm database. This database tracks characteristics of major storms and weather events in the United States, including when and where they occur, as well as estimates of any fatalities, injuries, and property damage.
+
+We are asking the questions:
+
+1) Across the United States, which types of events (as indicated in the EVTYPE variable) are most harmful with respect to population health?
+
+1) Across the United States, which types of events have the greatest economic consequences?
+
+**Synopsis**: Tornados have the most harmful in terms of fatalities, with storms causing the most injuries. Floods do the most property damage.
+
+## Data Processing
+
+We first download the Storm Data as a bz2 file (<https://d396qusza40orc.cloudfront.net/repdata%2Fdata%2FStormData.csv.bz2>) and `bunzip` it into our current directory.
+
+```{r, cache = TRUE }
+storm <- read.table("repdata-data-StormData.csv.bz2", sep = ",", header=TRUE, na.strings = "")
+```
+
+## Population Health
+
+For the first question about which event type has the most harm with respect to population health, we are looking at the `FATALITIES` and `INJURIES` values.
+
+```{r, warning=FALSE, message=FALSE}
+library(dplyr)
+dim(storm)
+
+#Remove rows not in US states and DC
+data(state) #built in list of states
+storm_us <- storm[which(storm$STATE %in% c(state.abb, "DC")),]
+dim(storm_us)
+
+storm_unhealthy <- storm_us %>% filter(FATALITIES > 0 | INJURIES > 0) %>% select(EVTYPE, STATE, FATALITIES, INJURIES) %>% arrange(desc(FATALITIES), desc(INJURIES))
+dim(storm_unhealthy)
+head(storm_unhealthy, 20)
+#Compare fatalities to injuries
+plot(log(storm_unhealthy$FATALITIES+1), log(storm_unhealthy$INJURIES+1), main="Log of Fatalities vs Injuries")
+#Look at the top 100 of each
+head(sort(storm_unhealthy$FATALITIES, decreasing = TRUE), 100)
+head(sort(storm_unhealthy$INJURIES, decreasing = TRUE), 100)
+```
+
+The vast majority of events have very few fatalities or injuries. Now lets see what the EVTYPE is for the top 200 of `storm_unhealthy`.
+
+```{r}
+sort(table(factor(head(storm_unhealthy$EVTYPE, 200))), decreasing = TRUE)
+```
+
+There is some common thems related to storms (including hurricanes), heat waves and floods. Let try to group these into a new EVGROUP factor.
+
+```{r, warning=FALSE}
+evgroup <- function(ev){
+    if(grepl("WARM|HEAT|DRY", ev)) 
+        "HEAT RELATED"
+    else if(grepl("TORNADO|FUNNEL", ev)) 
+        "TORNADO"
+    else if(grepl("LIGHTNING", ev)) 
+        "LIGHTNING"
+    else if(grepl("FIRE", ev)) 
+        "WILDFIRE"
+    else if(grepl("WINTER|WINTRY|ICE|ICY|BLIZZARD|COLD|FREEZE|FROST|LOW|FREEZING|SNOW|AVALANCHE|CHILL|HYPOTHERMIA|HYPERTHERMIA|SLEET|HAIL", ev)) 
+        "COLD AND SNOW RELATED"
+    else if(grepl("FLOOD|TIDE|SURGE|SURF|MARINE|SEAS|WATER|FLD|RIP|DROWNING|WAVE|TSUNAMI", ev)) 
+        "FLOOD AND SEA RELATED"
+    else if(grepl("DUST|FOG", ev)) 
+        "DUST OR FOG RELATED"
+    else if(grepl("STORM|HURRICANE|WIND|TYPHOON|RAIN|PRECIP", ev)) 
+        "STORM AND WIND RELATED"
+    else
+        "OTHER"
+}
+storm_unhealthy$EVGROUP <- factor(sapply(toupper(storm_unhealthy$EVTYPE), evgroup))
+```
+
+Firt lets look at fatalities and injury counts by these new groups to geta sense of their variance.
+
+```{r, warning=FALSE}
+library(ggplot2);library(Hmisc);library(gridExtra);
+#boxplot for fatalities by new group
+qplot(EVGROUP, log10(FATALITIES), data=storm_unhealthy, fill=EVGROUP, geom=c("boxplot"), main = "Log10 FATALITIES Blox Plot by Group Type")
+#boxplot for injuries by new group
+qplot(EVGROUP, log10(INJURIES), data=storm_unhealthy, fill=EVGROUP, geom=c("boxplot"), main = "Log10 UNJURIES Blox Plot by Group Type")
+```
+
+Note that `FLOOD AND SEA RELATED` has the single largest loss of life events, closly followed by `TORNADO`.
+
+
+## Economic Consequence
+
+But For the second question about economic consequence, we will look at `PROPDMG` and `CROPDMG` and adjust for their units.
+
+```{r}
+storm_costly <- storm_us %>% filter(PROPDMG > 0 | CROPDMG > 0) %>% select(EVTYPE, STATE, PROPDMG, PROPDMGEXP, CROPDMG, CROPDMGEXP)
+#Adjust for units
+k <- which(toupper(storm_costly$PROPDMGEXP) == "K")
+storm_costly$PROPDMG[k] = (storm_costly$PROPDMG[k] * 1e3)
+m <- which(toupper(storm_costly$PROPDMGEXP) == "M")
+storm_costly$PROPDMG[m] = (storm_costly$PROPDMG[m] * 1e6)
+b <- which(toupper(storm_costly$PROPDMGEXP) == "B")
+storm_costly$PROPDMG[b] = (storm_costly$PROPDMG[b] * 1e9)
+
+k <- which(toupper(storm_costly$CROPDMGEXP) == "K")
+storm_costly$CROPDMG[k] = (storm_costly$CROPDMG[k] * 1e3)
+m <- which(toupper(storm_costly$CROPDMGEXP) == "M")
+storm_costly$CROPDMG[m] = (storm_costly$CROPDMG[m] * 1e6)
+b <- which(toupper(storm_costly$CROPDMGEXP) == "B")
+storm_costly$CROPDMG[b] = (storm_costly$CROPDMG[b] * 1e9)
+
+storm_costly$EVGROUP <- factor(sapply(toupper(storm_costly$EVTYPE), evgroup))
+dim(storm_costly)
+```
+
+## Results
+
+We tabulate our total fatalities and injuries.
+
+```{r}
+storm_unhealthy %>% group_by(EVGROUP) %>% summarise(TotalFatalities=sum(FATALITIES), TotalInjuries=sum(INJURIES)) %>% arrange(desc(TotalFatalities), desc(TotalInjuries))
+```
+
+Tornados have the most harmful in terms of population health in terms of fatalities, and the aggregate of storm types is the most harful in terms of injuries.
+
+We can tabulate our total property and crop damage.
+
+```{r}
+storm_costly %>% group_by(EVGROUP) %>% summarise(TotalProperty=sum(PROPDMG), TotalCrop=sum(CROPDMG)) %>% arrange(desc(TotalProperty), desc(TotalCrop))
+```
+
+Floods do the most property damage, while OTHER (which includes Drought) does the most crop damage.
