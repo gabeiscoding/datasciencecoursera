@@ -1,0 +1,154 @@
+---
+title: "Fitness Data Exploration"
+author: "Gabe Rudy"
+date: "July 26, 2015"
+output: html_document
+---
+
+To get in shape for a 10 mile mountain trail run called the Jim Bridger Trail Run on June 27, 2015, I started counting calaries using MyFitnessPal to drop to a target weight of 160.
+
+With my iPhone (and Apple Watch starting early May) I had a trove of data colleted in HealthKit, and was able to export it using QS Access showing my training up to the race and after.
+
+References:
+
+ * [QS Access App](https://itunes.apple.com/gb/app/qs-access/id920297614?mt=8)
+ * [MyFitnessPal App](https://www.myfitnesspal.com/)
+ * [Jim Bridger Trail Run](http://www.bridgerskifoundation.org/jbtr)
+
+I dumped a CSV file with QS Access of various attributes.
+
+```{r , warning=FALSE, message=FALSE}
+library(dplyr)
+library(base64enc)
+library(lubridate)
+
+h <-read.csv('Health Data.csv', stringsAsFactors = FALSE)
+
+#Start and Finish have values like 29-Sep-2014 21:00
+h2 <- h %>% mutate(
+        Start = parse_date_time(Start, "%d-%m-%Y %H:%M"),
+        Finish = parse_date_time(Finish, "%d-%m-%Y %H:%M"),
+        Day = format(Start, "%Y-%m-%d"))
+
+#Clean up the names
+names(h2) <- gsub('\\.+$','', gsub('..', '.', names(h2), fixed=TRUE ))
+names(h2)
+
+#Fill in some NAs as appropriate
+h2$Weight.lb[h2$Weight.lb == 0] <- NA #Days without weight measurment
+#BPM values of 0 and a few measurements < 50 clearly errors
+h2$Heart.Rate.count.min[h2$Heart.Rate.count.min < 50] <- NA
+
+#Use dply to summurize hourly recordings by day, using per-column calculations and normalizing units
+by.day <- h2 %>%
+     group_by(Day) %>%
+     summarise(
+            Weight.lb = max(Weight.lb, na.rm=TRUE),
+            Active.Calories.kcal = sum(Active.Calories.kcal),
+            Distance.mi = sum(Distance.mi),
+            Steps.count = sum(Steps.count),
+            Heart.Rate.min.bpm = min(Heart.Rate.count.min, na.rm=TRUE),
+            Heart.Rate.max.bpm = max(Heart.Rate.count.min, na.rm=TRUE),
+            Heart.Rate.avg.bpm = mean(Heart.Rate.count.min, na.rm=TRUE),
+            Dietary.Calories.kcal = sum(Dietary.Calories.cal) / 1000,
+            Body.Fat.Percentage = max(Body.Fat.Percentage),
+            Carbohydrates.g = sum(Carbohydrates.mg) / 1000,
+            Protein.g = sum(Protein.g),
+            Total.Fat.g = sum(Total.Fat.g),
+            Polyunsaturated.Fat.g = sum(Polyunsaturated.Fat.g),
+            Saturated.Fat.g = sum(Saturated.Fat.g),
+            Sugar.g = sum(Sugar.g))
+
+#More NA setting for invalid days
+by.day$Active.Calories.kcal[by.day$Active.Calories.kcal == 0] <- NA
+by.day$Dietary.Calories.kcal[by.day$Dietary.Calories.kcal < 600] <- NA
+by.day$Body.Fat.Percentage[by.day$Body.Fat.Percentage == 0] <- NA
+
+#Start at first day with weight
+first = which(by.day$Weight.lb > 0)[1]
+by.day <- by.day[first:(nrow(by.day)-1),] #strip last day as well
+
+#Compute percetage of calories composed of Carbohydrates, Fat, Protein
+#Fat: 1 gram = 9 calories 
+#Protein: 1 gram = 4 calories 
+#Carbohydrates: 1 gram = 4 calories
+by.day <- by.day %>% mutate( Total.Computed.kcal = (Carbohydrates.g*4 + Protein.g*4 + Total.Fat.g*9),
+                         Carb.Percent = ((Carbohydrates.g*4)/Total.Computed.kcal) * 100,
+                         Protein.Percent = ((Protein.g*4)/Total.Computed.kcal) * 100,
+                         Fat.Percent = ((Total.Fat.g*9)/Total.Computed.kcal) * 100,
+                         Other.Fat.g = Total.Fat.g - (Polyunsaturated.Fat.g + Saturated.Fat.g) )
+
+```
+
+First a chart on weight. My goal was to do the run at 160 lbs. The run was on 2015-06-27
+
+```{r results = 'asis', comment = NA, cache = F, warning=FALSE, message=FALSE}
+require(rCharts)
+#Weight
+m2 <- xPlot(Weight.lb ~ Day, type = "line-dotted", data = by.day[!is.na(by.day$Weight.lb),], xScale="time")
+m2$show('iframesrc', cdn=TRUE)
+```
+
+Next combining the dietary calories from MyFitnessPal, plus the "active" calories recorded by the iPhone and Apple Watch.
+
+```{r results = 'asis', comment = NA, cache = F, warning=FALSE, message=FALSE}
+#Dietary and Active Calories (MyFitnessPal and Apple Watch/Phone)
+m4 <- mPlot(x = "Day", y = c("Dietary.Calories.kcal", "Active.Calories.kcal"), type = "Line", data = by.day[!is.na(by.day$Dietary.Calories.kcal),])
+m4$set(pointSize = 0, lineWidth = 2, events=c("2015-06-27", "2015-07-24"), hideHover=FALSE, postUnits=" kcals")
+m4$show('iframesrc', cdn=TRUE)
+```
+
+Next, per-day minimums, average and max. Unfortunately, during the race, the apple watch didn't take any heart rate readings.
+
+```{r results = 'asis', comment = NA, cache = F, warning=FALSE, message=FALSE}
+#Heart Rate (min, avg, max) from Apple Watch
+m5 <- mPlot(x = "Day", y = c("Heart.Rate.min.bpm", "Heart.Rate.avg.bpm", "Heart.Rate.max.bpm"), type = "Line", data = by.day[!is.na(by.day$Heart.Rate.avg.bpm),])
+m5$set(pointSize = 0, lineWidth = 2, events=c("2015-06-27", "2015-07-24"), hideHover=FALSE, postUnits=" bpm")
+m5$show('iframesrc', cdn=TRUE)
+```
+
+The iPhone records setps and movement, and the Apple Watch provides more accurate versions of those recordings. An aggregate distance moved is recorded for an overall activity measurement. This of course includes runes. You can see the frequency and distance of runs increase closer to race day!
+
+```{r results = 'asis', comment = NA, cache = F, warning=FALSE, message=FALSE}
+#Miles moved each day (phone and Apple Watch)
+m6 <- mPlot(x = "Day", y = c("Distance.mi"), type = "Line", data = by.day)
+m6$set(pointSize = 3, lineWidth=0, events=c("2015-06-27", "2015-07-24"), hideHover=FALSE, postUnits=" mi")
+m6$show('iframesrc', cdn=TRUE)
+```
+
+
+Because I enter most food into MyFitnessPal by barcode or searching for existing entries that include full nutritional panel information, lots of details are pushed to HealthKit about the makup of my diet.
+
+Here is daily fractions of my calories from Protein, Fat and Carbohydrates. 
+
+```{r results = 'asis', comment = NA, cache = F, warning=FALSE, message=FALSE}
+#Percentage of each days calories by Carbs, Protein, Fat
+percents <- melt(subset(by.day, Total.Computed.kcal > 0), id="Day", measure.vars=c("Protein.Percent", "Fat.Percent", "Carb.Percent"))
+percents <- percents %>% mutate(Day = as.integer(as.numeric(as.POSIXct(Day))))
+m7 <- Rickshaw$new()
+m7$layer(x = "Day", y = "value", group="variable", data=percents, type = "area", width = 560)
+# add a helpful slider this easily; other features TRUE as a default
+m7$set(slider = TRUE, scheme="munin")
+m7$show('iframesrc', cdn=TRUE)
+```
+
+And here is quantity of various calorie sources. Hover over the legend items to emphasize a specific item.
+
+```{r results = 'asis', comment = NA, cache = F, warning=FALSE, message=FALSE}
+#Grams eaten each day of Carbs, Protein, Sugar, and different types of Fat
+grams <- melt(subset(by.day, Total.Computed.kcal > 0), id="Day", measure.vars=c("Saturated.Fat.g", "Polyunsaturated.Fat.g", "Other.Fat.g", "Sugar.g", "Protein.g", "Carbohydrates.g"))
+grams <- grams %>% mutate(Day = as.integer(as.numeric(as.POSIXct(Day))))
+m8 <- Rickshaw$new()
+m8$layer(x = "Day", y = "value", group="variable", data=grams, type = "area", width = 560)
+# add a helpful slider this easily; other features TRUE as a default
+m8$set(slider = TRUE, scheme="munin")
+m8$show('iframesrc', cdn=TRUE)
+```
+
+
+Finally, I have map and tracking day taken by MapMyRun from the run! I far exceeded my goal time of 2:10 by finishing in the top 50 runners at 1:52.
+
+![map](jbtr_map.jpg)
+
+Speed, Elevation statistics:
+![map](jbtr_stats.jpg)
